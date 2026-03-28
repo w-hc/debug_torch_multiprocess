@@ -1,0 +1,25 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Attach: listen for remote workers",
+            "type": "debugpy",
+            "request": "attach",
+            "listen": {
+                // listen on all interfaces; 127.0.0.1/localhost accepts local connections only
+                "host": "0.0.0.0",
+                "port": 5678
+            },
+            "pathMappings": [
+                {
+                    // Since both nodes share NFS, these are likely identical.
+                    // Adjust if your NFS mount point differs between nodes.
+                    "localRoot": "${workspaceFolder}",
+                    "remoteRoot": "${workspaceFolder}"
+                }
+            ],
+            "justMyCode": true,
+            "subProcess": false
+        }
+    ]
+}
