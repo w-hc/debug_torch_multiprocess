@@ -2,24 +2,54 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "Attach: listen for remote workers",
+            // Direct launch with mp.spawn — best for local debugging.
+            // VSCode auto-discovers spawned workers via subProcess.
+            // Just press F5 and set breakpoints normally.
+            "name": "Debug: mp.spawn (local)",
+            "type": "debugpy",
+            "request": "launch",
+            "python": "${workspaceFolder}/.venv/bin/python",
+            "program": "${workspaceFolder}/train.py",
+            "args": [],
+            "env": {
+                "WORLD_SIZE": "8"
+            },
+            "subProcess": true,
+            "justMyCode": true
+        },
+        {
+            // Per-rank attach for torchrun on remote compute nodes.
+            // Start torchrun first, then attach.
+            "name": "Attach Rank 0 (torchrun)",
             "type": "debugpy",
             "request": "attach",
-            "listen": {
-                // listen on all interfaces; 127.0.0.1/localhost accepts local connections only
-                "host": "0.0.0.0",
-                "port": 5678
-            },
+            "connect": { "host": "localhost", "port": 5678 },
             "pathMappings": [
                 {
-                    // Since both nodes share NFS, these are likely identical.
-                    // Adjust if your NFS mount point differs between nodes.
                     "localRoot": "${workspaceFolder}",
                     "remoteRoot": "${workspaceFolder}"
                 }
             ],
-            "justMyCode": true,
-            "subProcess": false
+            "justMyCode": true
+        },
+        {
+            "name": "Attach Rank 1 (torchrun)",
+            "type": "debugpy",
+            "request": "attach",
+            "connect": { "host": "localhost", "port": 5679 },
+            "pathMappings": [
+                {
+                    "localRoot": "${workspaceFolder}",
+                    "remoteRoot": "${workspaceFolder}"
+                }
+            ],
+            "justMyCode": true
+        }
+    ],
+    "compounds": [
+        {
+            "name": "Attach All Ranks (torchrun)",
+            "configurations": ["Attach Rank 0 (torchrun)", "Attach Rank 1 (torchrun)"]
         }
     ]
 }

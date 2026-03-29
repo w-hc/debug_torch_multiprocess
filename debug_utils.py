@@ -11,10 +11,14 @@ def setup_debugpy():
 
     rank = dist.get_rank()
 
-    debug_host = os.environ.get("DEBUGPY_HOST", "localhost")
+    debug_host = os.environ.get("DEBUGPY_HOST", "0.0.0.0")
     debug_port = int(os.environ.get("DEBUGPY_PORT", "5678"))
 
-    debugpy.connect((debug_host, debug_port))
+    # Each rank listens on its own port (base_port + rank).
+    # VSCode attaches to each rank separately.
+    port = debug_port + rank
+    debugpy.listen((debug_host, port))
+    print(f"[Rank {rank}] Listening on {debug_host}:{port}...")
 
     wait_ranks = os.environ.get("DEBUGPY_WAIT_RANKS", "all")
     if wait_ranks == "all":

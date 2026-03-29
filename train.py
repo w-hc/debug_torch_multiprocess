@@ -1,11 +1,10 @@
 import datetime
+import os
 import torch
 import torch.nn as nn
 import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.utils.data import DataLoader, TensorDataset, DistributedSampler
-
-from debug_utils import setup_debugpy
 
 INPUT_DIM = 32
 NUM_CLASSES = 10
@@ -36,20 +35,17 @@ def make_fake_data():
     return TensorDataset(X, y)
 
 
-def main():
-    dist.init_process_group("nccl", timeout=datetime.timedelta(minutes=30))
-    setup_debugpy()
-
-    rank = dist.get_rank()
-    local_rank = rank % torch.cuda.device_count()
-    torch.cuda.set_device(local_rank)
+def train(rank, world_size):
+    dist.init_process_group("nccl", rank=rank, world_size=world_size,
+                            timeout=datetime.timedelta(minutes=30))
+    torch.cuda.set_device(rank)
 
     dataset = make_fake_data()
-    sampler = DistributedSampler(dataset, shuffle=True)
+    sampler = DistributedSampler(dataset, num_replicas=world_size, rank=rank, shuffle=True)
     loader = DataLoader(dataset, batch_size=BATCH_SIZE, sampler=sampler)
 
-    model = MLP().to(local_rank)
-    model = DDP(model, device_ids=[local_rank])
+    model = MLP().to(rank)
+    model = DDP(model, device_ids=[rank])
 
     optimizer = torch.optim.Adam(model.parameters(), lr=LR)
     criterion = nn.CrossEntropyLoss()
@@ -61,7 +57,7 @@ def main():
         total = 0
 
         for X, y in loader:
-            X, y = X.to(local_rank), y.to(local_rank)
+            X, y = X.to(rank), y.to(rank)
 
             logits = model(X)
             loss = criterion(logits, y)
@@ -83,4 +79,14 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    world_size = int(os.environ.get("WORLD_SIZE", torch.cuda.device_count()))
+
+    if os.environ.get("LOCAL_RANK") is not None:
+        # Launched by torchrun — we're already inside a worker
+        rank = int(os.environ["LOCAL_RANK"])
+        train(rank, world_size)
+    else:
+        # Direct launch — use mp.spawn for debuggability
+        os.environ["MASTER_ADDR"] = "localhost"
+        os.environ["MASTER_PORT"] = "29500"
+        torch.multiprocessing.spawn(train, args=(world_size,), nprocs=world_size)
