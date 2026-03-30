@@ -10,7 +10,7 @@ INPUT_DIM = 32
 NUM_CLASSES = 10
 NUM_SAMPLES = 4096
 BATCH_SIZE = 64
-EPOCHS = 5
+EPOCHS = 5000
 LR = 1e-3
 
 
@@ -86,7 +86,13 @@ if __name__ == "__main__":
         rank = int(os.environ["LOCAL_RANK"])
         train(rank, world_size)
     else:
-        # Direct launch — use mp.spawn for debuggability
+        # Direct launch — use torch.multiprocessing.spawn for debuggability
         os.environ["MASTER_ADDR"] = "localhost"
         os.environ["MASTER_PORT"] = "29500"
+
+        if os.environ.get("DEBUG"):
+            import debugpy
+            debugpy.connect(("localhost", int(os.environ.get("DEBUG_PORT", 5678))))
+            debugpy.wait_for_client()
+
         torch.multiprocessing.spawn(train, args=(world_size,), nprocs=world_size)

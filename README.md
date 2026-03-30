@@ -2,23 +2,26 @@
 
 ## Assumption
 Your distributed torch code runs on a remote compute node. Your laptop runs the VSCode client.
-What's described here should work whether you use a cloud box or slurm cluster. 
+What's described here should work whether you use a cloud box or slurm + NFS cluster.
 
-## Three Approaches
+## Four Approaches
 
 | Approach | How it works | Pros | Cons |
 |---|---|---|---|
-| **VSCode Remote Tunnel + `torch.multiprocessing.spawn`** | `code tunnel` on compute node; VSCode connects via Microsoft relay; F5 launches `torch.multiprocessing.spawn` with `subProcess: true` | Full IDE: visual breakpoints, variables, Call Stack per rank. Just press F5. Cmd+Shift+C continues all ranks. | Must replace torchrun with `torch.multiprocessing.spawn` (ok for debug). |
-| **Per-rank `debugpy.listen()`** | Each rank listens on its own debug port; SSH tunnels forward ports; VSCode attaches to each | Works with torchrun. Works multi-node. | One attach config + SSH tunnel per rank. Attach mode — can't auto-discover processes. |
+| **VSCode Remote Tunnel + `debugpy.connect()` + `torch.multiprocessing.spawn`** | `code tunnel` on compute node; VSCode connects via Microsoft relay; VSCode listens for debug connections; script calls `debugpy.connect()` then `torch.multiprocessing.spawn`; `subProcess: true` auto-discovers workers | Full IDE debugging. Args stay on the command line — launch.json never changes. Works with any entry script. | Must replace torchrun with `torch.multiprocessing.spawn` (ok for debug). Requires `pip install debugpy`. |
+| **VSCode Remote Tunnel + F5 launch + `torch.multiprocessing.spawn`** | Same tunnel setup; F5 launches the script directly with `subProcess: true` | Simplest workflow — just press F5. No debugpy boilerplate in code. | CLI args must go in launch.json `"args"` array — painful when args are complex or change frequently. |
+| **Per-rank `debugpy.listen()`** | Each rank listens on its own debug port; VSCode attaches to each | Works with torchrun. Works multi-node. | One attach config + SSH tunnel per rank. Attach mode — can't auto-discover processes. |
 | **`torch.distributed.breakpoint()`** | One line in source; paused rank drops into pdb; others wait at built-in barrier | Zero setup. Built-in rank sync — no NCCL timeout risk. | Terminal pdb only (no IDE). Must hardcode breakpoint calls. One rank at a time. |
 
-**Recommendation:** Use approach 1 for interactive debugging. Fall back to `torch.distributed.breakpoint()` for quick one-off inspections.
+**Recommendation:** Use approach 1 for interactive debugging — it gives you full IDE features while keeping your launch workflow identical to production (`python train.py [args...]`). Fall back to `torch.distributed.breakpoint()` for quick one-off inspections.
 
 ---
 
 ## Preliminary: VSCode DAP, debugpy
 
-VSCode has a sophisticated multi-language debug toolchain — it speaks DAP (Debug Adapter Protocol) to language-specific debug adapters. For Python, that adapter is `debugpy`. When you press F5, VSCode launches `debugpy`, which instruments the Python process and communicates breakpoints, step commands, and variable inspection back to the IDE over DAP. The VSCode Python/debugpy extension bundles its own copy of debugpy, so you don't need to `pip install` it for normal debugging. You only need a separate `pip install debugpy` if your code explicitly imports it (e.g., for the per-rank `debugpy.listen()` approach).
+VSCode has a sophisticated multi-language debug toolchain — it speaks DAP (Debug Adapter Protocol) to language-specific debug adapters. For Python, that adapter is `debugpy`. When you press F5, VSCode launches `debugpy`, which instruments the Python process and communicates breakpoints, step commands, and variable inspection back to the IDE over DAP. The VSCode Python/debugpy extension bundles its own copy of debugpy, so you don't need to `pip install` it for normal debugging. You only need a separate `pip install debugpy` if your code explicitly imports it — which the recommended approach does.
+
+The recommended approach uses debugpy in **attach-listen** mode, which is analogous to `gdbserver` for C/C++. VSCode starts a debug adapter that listens on a port, and the script connects to it via `debugpy.connect()`. The key difference from `gdbserver`: VSCode is an **observer**, not the process owner. It can set breakpoints and inspect state, but the process owns its own lifecycle — you get a "disconnect" button instead of "stop", and you Ctrl+C in the terminal to kill the script.
 
 
 ## Technical challenges
@@ -29,15 +32,17 @@ Two things break normal VSCode debugging in distributed training:
 
 2. **Execution happens on a different node.** Even if VSCode could launch torchrun, it would run locally, not on the compute node with the GPUs.
 
-**What does not work:** using `debugpy.connect()` to have each worker process actively connect to the single VSCode debug listener. `debugpy`'s adapter only accepts one root connection — subsequent independent processes are silently rejected ([debugpy#1501](https://github.com/microsoft/debugpy/issues/1501)). The `subProcess` flag doesn't help in attach mode either — it only tracks children spawned from a debugpy-instrumented parent in launch mode.
+**What does not work:** using `debugpy.connect()` to have each worker process independently connect to the single VSCode debug listener. `debugpy`'s adapter only accepts one root connection — subsequent independent processes are silently rejected ([debugpy#1501](https://github.com/microsoft/debugpy/issues/1501)). The `subProcess` flag doesn't help here either — it only tracks children spawned from a debugpy-instrumented parent, not independent processes connecting separately.
 
-**The fix:** replace `torchrun` with `torch.multiprocessing.spawn()` for debugging, and get VSCode onto the compute node via VSCode Remote Tunnel. Then F5 works — VSCode launches the script, `torch.multiprocessing.spawn()` creates workers, and `subProcess: true` lets the debugger auto-discover them.
+**The fix:** have a single parent process call `debugpy.connect()`, then use `torch.multiprocessing.spawn()` to create workers. Because the children are forked from the instrumented parent (not independent processes), `subProcess: true` lets the debug adapter auto-discover them. VSCode Remote Tunnels gets VSCode onto the compute node so the connection is just localhost.
 
 ---
 
 ## Architecture
 
-The compute node runs `code tunnel`, which connects outbound to Microsoft's relay. Your laptop's VSCode connects to the same relay via the Remote Tunnels extension. This makes VSCode effectively "local" to the compute node — no sshd or inbound ports needed. From there, `torch.multiprocessing.spawn()` + `subProcess: true` gives full multi-process debugging with zero debugpy boilerplate.
+The compute node runs `code tunnel`, which connects outbound to Microsoft's relay. Your laptop's VSCode connects to the same relay via the Remote Tunnels extension. This makes VSCode effectively "local" to the compute node — no sshd or inbound ports needed.
+
+For debugging, VSCode starts a debug adapter that listens on localhost. The training script calls `debugpy.connect()` to hook into it, then `torch.multiprocessing.spawn` creates workers. Because the parent process is debugpy-instrumented, `subProcess: true` causes each worker to auto-connect to the same adapter. All ranks appear in the Call Stack panel.
 
 ---
 
@@ -58,22 +63,27 @@ Authenticate with your GitHub account (one-time):
 code tunnel user login --provider github
 ```
 
-### 2. .vscode/launch.json
+### 2. Install debugpy in your Python environment
+
+The recommended approach imports debugpy in your training script, so it must be installed:
+
+```bash
+pip install debugpy
+```
+
+(The VSCode Python extension bundles its own debugpy for F5-launch debugging, but that copy isn't importable by your code.)
+
+### 3. .vscode/launch.json
 
 ```jsonc
 {
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "Debug: mp.spawn (local)",
+            "name": "Attach: torch.mp.spawn (listen)",
             "type": "debugpy",
-            "request": "launch",
-            "python": "${workspaceFolder}/.venv/bin/python",
-            "program": "${workspaceFolder}/train.py",
-            "args": [],
-            "env": {
-                "WORLD_SIZE": "2"
-            },
+            "request": "attach",
+            "listen": { "host": "localhost", "port": 5678 },
             "subProcess": true,
             "justMyCode": true
         }
@@ -81,11 +91,11 @@ code tunnel user login --provider github
 }
 ```
 
-- `"python"` points to the UV venv so the debugger uses the correct environment without manual activation.
-- `"subProcess": true` tells debugpy to auto-attach to child processes created by `torch.multiprocessing.spawn()`.
-- `WORLD_SIZE` controls the number of ranks. Set this to the number of GPUs you want to debug with.
+- `"request": "attach"` with `"listen"` — VSCode starts a debug adapter that listens on port 5678, waiting for the script to connect. This is the key: **launch.json never changes**, no matter what args your script takes.
+- `"subProcess": true` tells the adapter to accept child processes spawned by the connected parent.
+- `"justMyCode": true` skips stepping into PyTorch/library internals (set to `false` if you need to).
 
-### 3. Install the debug-continue-all extension
+### 4. Install the debug-continue-all extension
 
 VSCode has no built-in way to continue all debug sessions at once ([microsoft/vscode#245058](https://github.com/microsoft/vscode/issues/245058) — closed as "Not Planned"). With DDP, this means clicking the continue button on each rank individually — tedious with 8 ranks, and risky because ranks that resume early may hit a collective and timeout while you're still clicking through the rest.
 
@@ -127,13 +137,17 @@ On your laptop:
 ### 3. Debug
 
 1. Go to **Run and Debug** (Cmd+Shift+D).
-2. Select **"Debug: mp.spawn (local)"**.
-3. Press **F5**.
-4. VSCode launches `train.py`, which calls `torch.multiprocessing.spawn()` to create workers.
+2. Select **"Attach: torch.mp.spawn (listen)"** and press **F5**. VSCode is now listening on port 5678.
+3. In the **integrated terminal**, run your script with whatever args you need:
+   ```bash
+   DEBUG=1 WORLD_SIZE=2 python train.py --lr 0.001 --batch-size 32
+   ```
+4. The script calls `debugpy.connect()`, hooks into the waiting adapter, then `torch.multiprocessing.spawn` creates workers.
 5. Each worker appears as a separate session in the **Call Stack** panel.
 6. Set breakpoints anywhere — all ranks hit them.
 7. Click a session in Call Stack to switch context: **Variables**, **Watch**, and **Debug Console** all follow.
-8. Press **Cmd+Shift+C** to continue all ranks at once (provided by the `debug-continue-all` extension in `vscode_extension_debug_continue_all/`). Or press F5 on individual sessions to continue them one at a time.
+8. Press **Cmd+Shift+C** to continue all ranks at once (provided by the `debug-continue-all` extension). Or press F5 on individual sessions to continue them one at a time.
+9. When done, let the script finish naturally, or **Ctrl+C in the terminal** to kill it. The VSCode debug session shows a disconnect button (not stop) because VSCode is observing, not owning the process.
 
 ### 4. Clean up
 
@@ -143,7 +157,7 @@ Kill the `code tunnel` process (or cancel the job if using a scheduler). The tun
 
 ## How train.py Supports Both Modes
 
-The script auto-detects whether it was launched by torchrun or directly:
+The script auto-detects whether it was launched by torchrun or directly, and optionally connects to the debugger:
 
 ```python
 if __name__ == "__main__":
@@ -154,14 +168,23 @@ if __name__ == "__main__":
         rank = int(os.environ["LOCAL_RANK"])
         train(rank, world_size)
     else:
-        # Direct launch — use mp.spawn for debuggability
+        # Direct launch — use torch.multiprocessing.spawn for debuggability
         os.environ["MASTER_ADDR"] = "localhost"
         os.environ["MASTER_PORT"] = "29500"
+
+        if os.environ.get("DEBUG"):
+            import debugpy
+            debugpy.connect(("localhost", int(os.environ.get("DEBUG_PORT", 5678))))
+            debugpy.wait_for_client()
+
         torch.multiprocessing.spawn(train, args=(world_size,), nprocs=world_size)
 ```
 
-- **Debug:** `python train.py` → `torch.multiprocessing.spawn()` path → VSCode sees the spawned children.
-- **Production:** `torchrun --nproc_per_node=8 train.py` → torchrun path → no debugger overhead.
+- **Debug:** `DEBUG=1 WORLD_SIZE=2 python train.py [args...]` → connects to VSCode, then `torch.multiprocessing.spawn` → all ranks debuggable.
+- **Production:** `torchrun --nproc_per_node=8 train.py [args...]` → torchrun path → no debugger overhead.
+- **Non-debug direct:** `python train.py [args...]` → `torch.multiprocessing.spawn` without debugpy → no overhead.
+
+The `DEBUG` env var gates debugpy so there's zero import cost in normal runs. `DEBUG_PORT` defaults to 5678 but can be overridden if that port is taken.
 
 ---
 
@@ -185,6 +208,10 @@ DDP requires all ranks to participate in collective operations (allreduce during
 4. **Debug rank-local code only**: Data loading, loss computation, or anything without collectives can be debugged freely.
 5. **`gloo` backend for CPU debugging**: More forgiving than NCCL, runs without GPUs.
 
+### Disconnect vs Stop
+
+Because VSCode is in attach-listen mode, it observes the process rather than owning it. The debug toolbar shows **disconnect** instead of **stop**. To end the script, Ctrl+C in the terminal or let it finish naturally.
+
 ---
 
 ## About pathMappings
@@ -205,6 +232,26 @@ With Remote Tunnels, pathMappings are unnecessary — VSCode is running on the r
 ---
 
 ## Alternatives
+
+### F5 Launch with `torch.multiprocessing.spawn`
+
+If your script has few, stable args, you can skip the `debugpy.connect()` setup and use a standard launch config:
+
+```jsonc
+{
+    "name": "Debug: torch.mp.spawn (launch)",
+    "type": "debugpy",
+    "request": "launch",
+    "python": "${workspaceFolder}/.venv/bin/python",
+    "program": "${workspaceFolder}/train.py",
+    "args": ["--lr", "0.001"],
+    "env": { "WORLD_SIZE": "2" },
+    "subProcess": true,
+    "justMyCode": true
+}
+```
+
+The downside: every time your args change, you edit launch.json. For repos with multiple entry scripts and complex, frequently changing arguments, this gets messy fast.
 
 ### `torch.distributed.breakpoint()` (PyTorch 2.2+)
 
@@ -244,22 +291,24 @@ Forward each debug port via SSH tunnel, then create one attach config per rank i
 |---|---|
 | Start tunnel | `code tunnel --accept-server-license-terms --name my-gpu-box &` |
 | Connect VSCode | Remote-Tunnels → `my-gpu-box` |
-| Launch debugger | Select "Debug: mp.spawn (local)", press F5 |
+| Start debug listener | Select "Attach: torch.mp.spawn (listen)", press F5 |
+| Launch script | `DEBUG=1 WORLD_SIZE=2 python train.py [args...]` |
 | Switch ranks | Click session in Call Stack panel |
 | Continue all ranks | Cmd+Shift+C (requires `debug-continue-all` extension) |
 | Continue one rank | Click the session, press F5 |
+| Kill script | Ctrl+C in terminal (or let it finish) |
 | Avoid DDP hangs | `dist.init_process_group(timeout=timedelta(minutes=30))` |
 | Avoid DataLoader clutter | `num_workers=0` during debugging |
 
 ## Checklist
 
 - [ ] `code` CLI installed on the remote machine and authenticated with GitHub
-- [ ] `debugpy` installed in the Python environment (only needed for per-rank attach approach)
+- [ ] `debugpy` installed in the Python environment (`pip install debugpy`)
 - [ ] `code tunnel` running on the remote machine
 - [ ] VSCode connected via Remote-Tunnels extension
-- [ ] `WORLD_SIZE` set in launch.json `env` block
-- [ ] `"python"` in launch.json points to the correct venv
+- [ ] launch.json has the `Attach: torch.mp.spawn (listen)` config
+- [ ] Training script has the `debugpy.connect()` block gated by `DEBUG` env var
 - [ ] DDP timeout set to a large value in `train.py`
-- [ ] `num_workers=0` in DataLoader
+- [ ] `num_workers=0` in DataLoader during debug
 - [ ] `debug-continue-all` extension installed (see `vscode_extension_debug_continue_all/cmds.sh`)
 - [ ] `justMyCode` set to `true` unless you need to step into PyTorch internals
