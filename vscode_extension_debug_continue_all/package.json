@@ -1,0 +1,36 @@
+{
+    "name": "debug-continue-all",
+    "displayName": "Debug: Continue All",
+    "description": "Adds a 'Continue All' command that resumes all paused debug sessions at once.",
+    "version": "0.0.1",
+    "publisher": "local",
+
+    "engines": {
+        "vscode": "^1.70.0"
+    },
+
+    "categories": ["Debuggers"],
+
+    "activationEvents": [
+        "onDebug"
+    ],
+
+    "main": "./extension.js",
+
+    "contributes": {
+        "commands": [
+            {
+                "command": "debug.continueAll",
+                "title": "Debug: Continue All Sessions"
+            }
+        ],
+        "keybindings": [
+            {
+                "command": "debug.continueAll",
+                "key": "ctrl+shift+c",
+                "mac": "cmd+shift+c",
+                "when": "inDebugMode"
+            }
+        ]
+    }
+}
