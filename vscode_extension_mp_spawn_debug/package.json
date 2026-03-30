@@ -1,7 +1,7 @@
 {
-    "name": "debug-continue-all",
-    "displayName": "Debug: Continue All",
-    "description": "Adds a 'Continue All' command that resumes all paused debug sessions at once.",
+    "name": "mp-spawn-debug",
+    "displayName": "mp.spawn Debug Utilities",
+    "description": "Bulk debug actions for torch.multiprocessing.spawn: continue all sessions, terminate all sessions.",
     "version": "0.0.1",
     "publisher": "local",
 
@@ -22,6 +22,10 @@
             {
                 "command": "debug.continueAll",
                 "title": "Debug: Continue All Sessions"
+            },
+            {
+                "command": "debug.terminateAll",
+                "title": "Debug: Terminate All Sessions"
             }
         ],
         "keybindings": [
@@ -29,6 +33,12 @@
                 "command": "debug.continueAll",
                 "key": "ctrl+shift+c",
                 "mac": "cmd+shift+c",
+                "when": "inDebugMode"
+            },
+            {
+                "command": "debug.terminateAll",
+                "key": "ctrl+shift+.",
+                "mac": "cmd+shift+.",
                 "when": "inDebugMode"
             }
         ]

@@ -62,9 +62,45 @@ function activate(context) {
 
             const resumed = results.filter(Boolean).length;
             if (resumed > 0) {
-                // Ephemeral status bar message, disappears after 2 seconds.
                 vscode.window.setStatusBarMessage(`Continued ${resumed} session(s)`, 2000);
             }
+        })
+    );
+
+    // --- The "Terminate All" command ---
+    // In attach-listen mode, VSCode only offers "disconnect" which leaves the
+    // process running. We use a two-stage approach from the DAP spec:
+    //   1. "terminate" — asks debugpy to send SIGTERM (graceful, allows cleanup)
+    //   2. "disconnect" with terminateDebuggee: true — sends SIGKILL (forceful)
+    //
+    // Note: debugpy#338 — debugpy may not kill all children in a process group.
+    // torch.multiprocessing.spawn children could survive. If that happens,
+    // manually kill the process group from the terminal.
+    context.subscriptions.push(
+        vscode.commands.registerCommand('debug.terminateAll', async () => {
+            const sessions = [...activeSessions];
+            // Stage 1: graceful terminate (SIGTERM)
+            await Promise.all(
+                sessions.map(session =>
+                    session.customRequest('terminate', {})
+                        .then(() => true)
+                        .catch(() => null)
+                )
+            );
+            // Brief pause for graceful shutdown
+            await new Promise(resolve => setTimeout(resolve, 500));
+            // Stage 2: forceful disconnect for any sessions still alive
+            const remaining = [...activeSessions];
+            if (remaining.length > 0) {
+                await Promise.all(
+                    remaining.map(session =>
+                        session.customRequest('disconnect', { terminateDebuggee: true })
+                            .then(() => true)
+                            .catch(() => null)
+                    )
+                );
+            }
+            vscode.window.setStatusBarMessage(`Terminated ${sessions.length} session(s)`, 2000);
         })
     );
 }
