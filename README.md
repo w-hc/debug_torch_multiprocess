@@ -2,6 +2,7 @@
 
 ## Assumption
 Your distributed torch code runs on a remote compute node. Your laptop runs the VSCode client.
+What's described here should work whether you use a cloud box or slurm cluster. 
 
 ## Three Approaches
 
