@@ -4,7 +4,7 @@
 
 | Approach | How it works | Pros | Cons |
 |---|---|---|---|
-| **Remote Tunnels + `mp.spawn()`** | `code tunnel` on compute node; VSCode connects via Microsoft relay; F5 launches `mp.spawn()` with `subProcess: true` | Full IDE: visual breakpoints, variables, Call Stack per rank. Just press F5. | Must replace torchrun with `mp.spawn()` (no elastic launch). No "Continue All" — must F5 each rank separately. |
+| **Remote Tunnels + `mp.spawn()`** | `code tunnel` on compute node; VSCode connects via Microsoft relay; F5 launches `mp.spawn()` with `subProcess: true` | Full IDE: visual breakpoints, variables, Call Stack per rank. Just press F5. Cmd+Shift+C continues all ranks. | Must replace torchrun with `mp.spawn()` (no elastic launch). |
 | **Per-rank `debugpy.listen()`** | Each rank listens on its own debug port; SSH tunnels forward ports; VSCode attaches to each | Works with torchrun. Works multi-node. | One attach config + SSH tunnel per rank. Attach mode — can't auto-discover processes. |
 | **`torch.distributed.breakpoint()`** | One line in source; paused rank drops into pdb; others wait at built-in barrier | Zero setup. Built-in rank sync — no NCCL timeout risk. | Terminal pdb only (no IDE). Must hardcode breakpoint calls. One rank at a time. |
 
@@ -121,9 +121,7 @@ On your MacBook:
 5. Each worker appears as a separate session in the **Call Stack** panel.
 6. Set breakpoints anywhere — all ranks hit them.
 7. Click a session in Call Stack to switch context: **Variables**, **Watch**, and **Debug Console** all follow.
-8. Press **F5** on each session individually to continue it (there is no "Continue All").
-
-With a 30-minute DDP timeout, the few-second gap between continuing ranks is harmless.
+8. Press **Cmd+Shift+C** to continue all ranks at once (provided by the `debug-continue-all` extension in `vscode_extension_debug_continue_all/`). Or press F5 on individual sessions to continue them one at a time.
 
 ### 4. Clean up
 
@@ -236,7 +234,8 @@ Forward each debug port via SSH tunnel, then create one attach config per rank i
 | Connect VSCode | Remote-Tunnels → `slurm-debug` |
 | Launch debugger | Select "Debug: mp.spawn (local)", press F5 |
 | Switch ranks | Click session in Call Stack panel |
-| Continue a rank | Click the session, press F5 |
+| Continue all ranks | Cmd+Shift+C (requires `debug-continue-all` extension) |
+| Continue one rank | Click the session, press F5 |
 | Avoid DDP hangs | `dist.init_process_group(timeout=timedelta(minutes=30))` |
 | Avoid DataLoader clutter | `num_workers=0` during debugging |
 
@@ -250,4 +249,5 @@ Forward each debug port via SSH tunnel, then create one attach config per rank i
 - [ ] `"python"` in launch.json points to the correct venv
 - [ ] DDP timeout set to a large value in `train.py`
 - [ ] `num_workers=0` in DataLoader
+- [ ] `debug-continue-all` extension installed (see `vscode_extension_debug_continue_all/cmds.sh`)
 - [ ] `justMyCode` set to `true` unless you need to step into PyTorch internals
