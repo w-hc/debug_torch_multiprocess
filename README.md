@@ -84,12 +84,9 @@ code tunnel user login --provider github
 - `"subProcess": true` tells debugpy to auto-attach to child processes created by `torch.multiprocessing.spawn()`.
 - `WORLD_SIZE` controls the number of ranks. Set this to the number of GPUs you want to debug with.
 
----
+### 3. Install the debug-continue-all extension
 
-
-## Custom VSCode extension: debug-continue-all
-
-VSCode has no built-in way to continue all debug sessions at once ([microsoft/vscode#245058](https://github.com/microsoft/vscode/issues/245058) — closed as "Not Planned"). With DDP, this means clicking F5 on each rank individually — tedious with 8 ranks, and risky because ranks that resume early may hit a collective and timeout while you're still clicking through the rest.
+VSCode has no built-in way to continue all debug sessions at once ([microsoft/vscode#245058](https://github.com/microsoft/vscode/issues/245058) — closed as "Not Planned"). With DDP, this means clicking the continue button on each rank individually — tedious with 8 ranks, and risky because ranks that resume early may hit a collective and timeout while you're still clicking through the rest.
 
 The `debug-continue-all` extension in `vscode_extension_debug_continue_all/` solves this. It sends DAP `continue` requests to all active debug sessions in parallel via `Promise.all`, minimizing the window between the first and last rank resuming.
 
@@ -102,6 +99,9 @@ ln -s "$(pwd)/vscode_extension_debug_continue_all" ~/.vscode-server/extensions/d
 ```
 
 Then reload VSCode: Cmd+Shift+P → "Developer: Reload Window".
+
+With this extension, you set breakpoints in the VSCode UI interactively, and let all ranks
+continue til the breakpoint.
 
 ---
 
