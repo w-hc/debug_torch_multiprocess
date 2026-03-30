@@ -90,9 +90,10 @@ if __name__ == "__main__":
         os.environ["MASTER_ADDR"] = "localhost"
         os.environ["MASTER_PORT"] = "29500"
 
-        if os.environ.get("DEBUG"):
-            import debugpy
-            debugpy.connect(("localhost", int(os.environ.get("DEBUG_PORT", 5678))))
-            debugpy.wait_for_client()
+        # using debugpy_auto; manual connect() no longer needed; 
+        # if os.environ.get("DEBUG"):
+        #     import debugpy
+        #     debugpy.connect(("localhost", int(os.environ.get("DEBUG_PORT", 5678))))
+        #     debugpy.wait_for_client()
 
         torch.multiprocessing.spawn(train, args=(world_size,), nprocs=world_size)
