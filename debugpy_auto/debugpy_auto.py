@@ -37,12 +37,27 @@ if os.environ.get("DEBUG"):
 
     if not os.environ.get("_DEBUGPY_CONNECTED"):
         import debugpy
+        import socket, time
 
-        os.environ["_DEBUGPY_CONNECTED"] = "1"
-        print(f"[debugpy_auto] process (pid={os.getpid()}): connecting to localhost:{_port}...")
-        debugpy.connect(("localhost", _port))
-        print(f"[debugpy_auto] Connected. Waiting for VSCode client to attach...")
-        debugpy.wait_for_client()
-        print(f"[debugpy_auto] Client attached. Resuming execution.")
+        print(f"[debugpy_auto] process (pid={os.getpid()}): waiting for VSCode debugger on localhost:{_port}")
+        _port_is_open = False
+        while True:
+            try:
+                sock = socket.create_connection(("localhost", _port), timeout=1)
+                sock.close()
+                _port_is_open = True
+                break
+            except OSError:
+                time.sleep(1)
+            except KeyboardInterrupt:
+                print(f"\n[debugpy_auto] Interrupted.")
+                exit(0)
+
+        if _port_is_open:
+            debugpy.connect(("localhost", _port))
+            os.environ["_DEBUGPY_CONNECTED"] = "1"
+            print(f"[debugpy_auto] Connected. Waiting for VSCode client to attach...")
+            debugpy.wait_for_client()
+            print(f"[debugpy_auto] Client attached. Resuming execution.")
     else:
         print(f"[debugpy_auto] process (pid={os.getpid()}): skipping connect(); DEBUG is set but _DEBUGPY_CONNECTED guard is active")
