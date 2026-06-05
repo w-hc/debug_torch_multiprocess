@@ -7,35 +7,33 @@
 #   process in this venv will execute this file on startup.
 #
 # Activation:
-#   Set DEBUG=1 in the environment. Without it, this module is a no-op.
-#     DEBUG=1 WORLD_SIZE=2 python train.py --lr 0.001
+#   Set DEBUGPY_AUTO=1 in the environment. Without it, this module is a no-op.
+#     DEBUGPY_AUTO=1 WORLD_SIZE=2 python train.py --lr 0.001
 #
-# The _DEBUGPY_CONNECTED guard:
+# The _DEBUGPY_AUTO_IS_CONNECTED guard:
 #   torch.multiprocessing.spawn uses the "spawn" start method, which launches
 #   each child as a fresh Python interpreter. Each child goes through site
 #   initialization and imports this module again. Without the guard, every
 #   child would call debugpy.connect() independently — but debugpy's adapter
 #   only accepts one root connection (debugpy#1501). The parent's connection
 #   is the root; children are auto-discovered via the subProcess: true setting
-#   in launch.json. Setting _DEBUGPY_CONNECTED=1 after the parent connects
+#   in launch.json. Setting _DEBUGPY_AUTO_IS_CONNECTED=1 after the parent connects
 #   prevents children from trying to connect a second time.
 #
 # Configuration:
-#   DEBUG         — set to any truthy value to enable (e.g. DEBUG=1)
-#   DEBUG_PORT    — adapter port (default 5678)
+#   DEBUGPY_AUTO         — set to any truthy value to enable (e.g. DEBUGPY_AUTO=1)
+#   DEBUGPY_AUTO_PORT    — adapter port (default 5678)
 #
 # Install:
-#   cp debugpy_auto/debugpy_auto.py debugpy_auto/debugpy_auto.pth \
-#     .venv/lib/python3.12/site-packages/
-#
+#   cp debugpy_auto/debugpy_auto.py debugpy_auto/debugpy_auto.pth .venv/lib/python3.12/site-packages/
 #   If the venv is recreated, re-run the copy.
 
 import os
 
-if os.environ.get("DEBUG"):
-    _port = int(os.environ.get("DEBUG_PORT", 5678))
+if os.environ.get("DEBUGPY_AUTO"):
+    _port = int(os.environ.get("DEBUGPY_AUTO_PORT", 5678))
 
-    if not os.environ.get("_DEBUGPY_CONNECTED"):
+    if not os.environ.get("_DEBUGPY_AUTO_IS_CONNECTED"):
         import debugpy
         import socket, time
 
@@ -55,9 +53,9 @@ if os.environ.get("DEBUG"):
 
         if _port_is_open:
             debugpy.connect(("localhost", _port))
-            os.environ["_DEBUGPY_CONNECTED"] = "1"
+            os.environ["_DEBUGPY_AUTO_IS_CONNECTED"] = "1"
             print(f"[debugpy_auto] Connected. Waiting for VSCode client to attach...")
             debugpy.wait_for_client()
             print(f"[debugpy_auto] Client attached. Resuming execution.")
     else:
-        print(f"[debugpy_auto] process (pid={os.getpid()}): skipping connect(); DEBUG is set but _DEBUGPY_CONNECTED guard is active")
+        print(f"[debugpy_auto] process (pid={os.getpid()}): skipping connect(); DEBUGPY_AUTO is set but _DEBUGPY_AUTO_IS_CONNECTED guard is active")
