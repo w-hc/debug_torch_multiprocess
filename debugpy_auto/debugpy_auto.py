@@ -25,7 +25,8 @@
 #   DEBUGPY_AUTO_PORT    — adapter port (default 5678)
 #
 # Install:
-#   cp debugpy_auto/debugpy_auto.py debugpy_auto/debugpy_auto.pth .venv/lib/python3.12/site-packages/
+#   With the target venv activated:
+#   cp debugpy_auto/* "$(python -c 'import site; print(site.getsitepackages()[0])')"/
 #   If the venv is recreated, re-run the copy.
 
 import os
@@ -38,24 +39,29 @@ if os.environ.get("DEBUGPY_AUTO"):
         import socket, time
 
         print(f"[debugpy_auto] process (pid={os.getpid()}): waiting for VSCode debugger on localhost:{_port}")
-        _port_is_open = False
-        while True:
-            try:
-                sock = socket.create_connection(("localhost", _port), timeout=1)
-                sock.close()
-                _port_is_open = True
-                break
-            except OSError:
-                time.sleep(1)
-            except KeyboardInterrupt:
-                print(f"\n[debugpy_auto] Interrupted.")
-                exit(0)
+        # Ctrl+C handling: this code runs inside `import site`, so any exception
+        # that escapes (KeyboardInterrupt, and even SystemExit from sys.exit())
+        # aborts interpreter startup with "Fatal Python error: init_import_site".
+        # The builtin exit() isn't defined yet either. os._exit() is the only clean way out.
+        # The try must wrap the whole wait: a KeyboardInterrupt raised inside an
+        # `except OSError:` handler (i.e. during time.sleep) is not caught by a
+        # sibling `except KeyboardInterrupt:` clause.
+        try:
+            while True:
+                try:
+                    sock = socket.create_connection(("localhost", _port), timeout=1)
+                    sock.close()
+                    break
+                except OSError:
+                    time.sleep(1)
 
-        if _port_is_open:
             debugpy.connect(("localhost", _port))
             os.environ["_DEBUGPY_AUTO_IS_CONNECTED"] = "1"
             print(f"[debugpy_auto] Connected. Waiting for VSCode client to attach...")
             debugpy.wait_for_client()
             print(f"[debugpy_auto] Client attached. Resuming execution.")
+        except KeyboardInterrupt:
+            print(f"\n[debugpy_auto] Interrupted.", flush=True)
+            os._exit(130)
     else:
         print(f"[debugpy_auto] process (pid={os.getpid()}): skipping connect(); DEBUGPY_AUTO is set but _DEBUGPY_AUTO_IS_CONNECTED guard is active")
