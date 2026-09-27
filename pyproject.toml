@@ -1,0 +1,22 @@
+[project]
+name = "debug-torch-multiprocess"
+version = "0.1.0"
+description = "Debug torch.multiprocessing.spawn / DDP workers from VSCode via debugpy"
+requires-python = ">=3.12"
+dependencies = [
+    "debugpy",
+    "numpy>=2.5.3",
+    "torch==2.10.0",
+]
+
+[tool.uv]
+package = false
+
+# torch must come from the PyTorch CUDA index, not PyPI.
+[[tool.uv.index]]
+name = "pytorch-cu128"
+url = "https://download.pytorch.org/whl/cu128"
+explicit = true
+
+[tool.uv.sources]
+torch = { index = "pytorch-cu128" }

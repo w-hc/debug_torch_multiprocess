@@ -79,12 +79,14 @@ Run both with the target venv activated. The first line installs debugpy itself.
 
 ### 3. .vscode/launch.json
 
+The repo's `launch.json` holds only this config. The alternative configs described under [Alternatives](#alternatives) live in `.vscode/launch_extra.json` for reference. VSCode only reads `launch.json`, so copy any you need into it.
+
 ```jsonc
 {
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "Attach: torch.mp.spawn (listen)",
+            "name": "DEBUGPY attach",
             "type": "debugpy",
             "request": "attach",
             "listen": { "host": "localhost", "port": 5678 },
@@ -142,7 +144,7 @@ On your laptop:
 ### 3. Debug
 
 1. Go to **Run and Debug** (Cmd+Shift+D).
-2. Select **"Attach: torch.mp.spawn (listen)"** and press **F5**. VSCode is now listening on port 5678.
+2. Select **"DEBUGPY attach"** and press **F5**. VSCode is now listening on port 5678.
 3. In the **integrated terminal**, run your script with whatever args you need:
    ```bash
    DEBUGPY_AUTO=1 WORLD_SIZE=2 python train.py --lr 0.001 --batch-size 32
@@ -230,7 +232,7 @@ With Remote Tunnels, pathMappings are unnecessary — VSCode is running on the r
 
 ### F5 Launch with `torch.multiprocessing.spawn`
 
-If your script has few, stable args, you can skip the `debugpy_auto` setup and use a standard launch config:
+If your script has few, stable args, you can skip the `debugpy_auto` setup and use a standard launch config (also in `.vscode/launch_extra.json`):
 
 ```jsonc
 {
@@ -267,7 +269,7 @@ debugpy.listen(("0.0.0.0", 5678 + rank))
 debugpy.wait_for_client()
 ```
 
-Forward each debug port via SSH tunnel, then create one attach config per rank in launch.json with a compound launch to attach all at once. More setup but doesn't require Remote Tunnels. See `debug_utils.py` for the implementation and the per-rank attach configs in `launch.json`.
+Forward each debug port via SSH tunnel, then create one attach config per rank in launch.json with a compound launch to attach all at once. More setup but doesn't require Remote Tunnels. See `debug_utils.py` for the implementation and the per-rank attach configs in `.vscode/launch_extra.json`.
 
 ### Useful environment variables
 
@@ -286,7 +288,7 @@ Forward each debug port via SSH tunnel, then create one attach config per rank i
 |---|---|
 | Start tunnel | `code tunnel --accept-server-license-terms --name my-gpu-box &` |
 | Connect VSCode | Remote-Tunnels → `my-gpu-box` |
-| Start debug listener | Select "Attach: torch.mp.spawn (listen)", press F5 |
+| Start debug listener | Select "DEBUGPY attach", press F5 |
 | Launch script | `DEBUGPY_AUTO=1 WORLD_SIZE=2 python train.py [args...]` |
 | Switch ranks | Click session in Call Stack panel |
 | Continue all ranks | Cmd+Shift+C (`mp-spawn-debug` extension) |
@@ -304,7 +306,7 @@ Forward each debug port via SSH tunnel, then create one attach config per rank i
 - [ ] `debugpy_auto` site hook installed (`cp debugpy_auto/* <venv site-packages>/`)
 - [ ] `code tunnel` running on the remote machine
 - [ ] VSCode connected via Remote-Tunnels extension
-- [ ] launch.json has the `Attach: torch.mp.spawn (listen)` config
+- [ ] launch.json has the `DEBUGPY attach` config
 - [ ] `mp-spawn-debug` extension installed (see `vscode_extension_mp_spawn_debug/cmds.sh`)
 - [ ] DDP timeout set to a large value in `train.py`
 - [ ] `num_workers=0` in DataLoader during debug

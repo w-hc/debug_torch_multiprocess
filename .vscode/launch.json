@@ -4,63 +4,13 @@
         {
             // Attach-listen: VSCode listens, script connects via debugpy.connect().
             // Run your script from the terminal with any args you want.
-            // Start this debug session FIRST, then run: python train.py [args...]
-            "name": "Attach: torch.mp.spawn (listen)",
+            // Then run: DEBUGPY_AUTO=1 python train.py [args...] (either order works).
+            "name": "DEBUGPY attach",
             "type": "debugpy",
             "request": "attach",
             "listen": { "host": "localhost", "port": 5678 },
             "subProcess": true,
             "justMyCode": true
-        },
-        {
-            // Direct launch with mp.spawn — best for local debugging.
-            // VSCode auto-discovers spawned workers via subProcess.
-            // Just press F5 and set breakpoints normally.
-            "name": "Debug: torch.mp.spawn (local)",
-            "type": "debugpy",
-            "request": "launch",
-            "python": "${workspaceFolder}/.venv/bin/python",
-            "program": "${workspaceFolder}/train.py",
-            "args": [],
-            "env": {
-                "WORLD_SIZE": "2"
-            },
-            "subProcess": true,
-            "justMyCode": true
-        },
-        {
-            // Per-rank attach for torchrun on remote compute nodes.
-            // Start torchrun first, then attach.
-            "name": "Attach Rank 0 (torchrun)",
-            "type": "debugpy",
-            "request": "attach",
-            "connect": { "host": "localhost", "port": 5678 },
-            "pathMappings": [
-                {
-                    "localRoot": "${workspaceFolder}",
-                    "remoteRoot": "${workspaceFolder}"
-                }
-            ],
-            "justMyCode": true
-        },
-        {
-            "name": "Attach Rank 1 (torchrun)",
-            "type": "debugpy",
-            "request": "attach",
-            "connect": { "host": "localhost", "port": 5679 },
-            "pathMappings": [
-                {
-                    "localRoot": "${workspaceFolder}",
-                    "remoteRoot": "${workspaceFolder}"
-                }
-            ],
-            "justMyCode": true
-        }
-    ],
-    "compounds": [
-        {
-            "name": "Attach All Ranks (torchrun)",
-            "configurations": ["Attach Rank 0 (torchrun)", "Attach Rank 1 (torchrun)"]
         }
     ]
 }
